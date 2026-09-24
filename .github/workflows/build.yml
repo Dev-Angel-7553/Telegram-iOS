@@ -35,6 +35,14 @@ jobs:
           fi
           xcodebuild -version || true
 
+      - name: Cache Bazel disk cache
+        uses: actions/cache@v4
+        with:
+          path: ~/bazel-disk-cache
+          key: bazel-disk-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            bazel-disk-${{ runner.os }}-
+
       - name: Build the App
         run: |
           set -x
@@ -63,6 +71,7 @@ jobs:
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
             build \
+            --cacheDir="$HOME/bazel-disk-cache" \
             --configurationPath="build-system/appstore-configuration.json" \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=release_arm64 \
