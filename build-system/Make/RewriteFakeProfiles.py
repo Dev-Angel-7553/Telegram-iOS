@@ -29,11 +29,10 @@ from GenerateProfiles import (
     setup_temp_keychain,
     cleanup_temp_keychain,
     get_signing_identity_from_p12,
-    get_certificate_base64_from_p12,
 )
 
 
-def rewrite_profile(source, old_bundle_id, new_bundle_id, certificate_data, signing_identity, keychain_name):
+def rewrite_profile(source, old_bundle_id, new_bundle_id, signing_identity, keychain_name):
     # Decode the CMS-wrapped profile to its plist payload.
     parsed_plist = run_executable_with_output('security', arguments=['cms', '-D', '-i', source], check_result=True)
 
@@ -54,20 +53,19 @@ def rewrite_profile(source, old_bundle_id, new_bundle_id, certificate_data, sign
     with open(parsed_plist_file, 'w') as file:
         file.write(contents)
 
-    # Remove all existing developer certificates.
-    while True:
-        run_executable_with_output('plutil', arguments=['-remove', 'DeveloperCertificates.0', parsed_plist_file], check_result=False)
-        check = run_executable_with_output('plutil', arguments=['-extract', 'DeveloperCertificates.0', 'raw', parsed_plist_file], check_result=False)
-        if check is None or 'Could not' in str(check):
-            break
+    # NOTE: do NOT touch DeveloperCertificates. The committed fake profiles are
+    # already signed by (and carry) the SelfSigned cert that ImportCertificates
+    # loads into the build keychain, so codesign already finds a matching
+    # identity. Re-inserting the cert here previously broke that match
+    # ("Unable to find an identity ... matching the ones in <profile>").
 
-    # Insert the fake developer certificate.
-    run_executable_with_output('plutil', arguments=['-insert', 'DeveloperCertificates.0', '-data', certificate_data, parsed_plist_file], check_result=True)
-
-    # Drop the DER signature blob; it is re-created by the CMS signature below.
+    # Drop the DER signature blob; it embeds a stale copy of the entitlements
+    # (with the old bundle id) that codesign would otherwise read instead of the
+    # rewritten plist. It is re-created by the CMS signature below.
     run_executable_with_output('plutil', arguments=['-remove', 'DER-Encoded-Profile', parsed_plist_file], check_result=False)
 
-    # Re-sign in place with the fake certificate.
+    # Re-sign in place with the fake certificate (same identity that already
+    # signs the profile), so it stays a valid CMS-wrapped .mobileprovision.
     run_executable_with_output('security', arguments=[
         'cms', '-S', '-k', keychain_name, '-N', signing_identity, '-i', parsed_plist_file, '-o', source
     ], check_result=True)
@@ -82,7 +80,6 @@ def rewrite_profiles(profiles_path, certs_path, old_bundle_id, new_bundle_id):
         sys.exit(1)
 
     p12_password = ''  # fake-codesigning uses an empty password
-    certificate_data = get_certificate_base64_from_p12(p12_path, p12_password)
     signing_identity = get_signing_identity_from_p12(p12_path, p12_password)
     if not signing_identity:
         print('Could not extract signing identity from {}'.format(p12_path))
@@ -102,7 +99,6 @@ def rewrite_profiles(profiles_path, certs_path, old_bundle_id, new_bundle_id):
                 source=os.path.join(profiles_path, file_name),
                 old_bundle_id=old_bundle_id,
                 new_bundle_id=new_bundle_id,
-                certificate_data=certificate_data,
                 signing_identity=signing_identity,
                 keychain_name=keychain_name,
             )
