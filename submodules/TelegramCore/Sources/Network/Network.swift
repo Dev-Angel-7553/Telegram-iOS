@@ -535,17 +535,34 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
                     3: ["149.154.175.117"]
                 ]
             } else {
+                // Onyxgram (Testgram) self-hosted server. All datacenters live on
+                // one host; the IPv6 entry is an IPv4-mapped address so IPv6-only
+                // clients still reach our server instead of real Telegram.
                 seedAddressList = [
-                    1: ["149.154.175.50", "2001:b28:f23d:f001::a"],
-                    2: ["149.154.167.50", "95.161.76.100", "2001:67c:4e8:f002::a"],
-                    3: ["149.154.175.100", "2001:b28:f23d:f003::a"],
-                    4: ["149.154.167.91", "2001:67c:4e8:f004::a"],
-                    5: ["149.154.171.5", "2001:b28:f23f:f005::a"]
+                    1: ["77.91.100.159", "::ffff:77.91.100.159"],
+                    2: ["77.91.100.159", "::ffff:77.91.100.159"],
+                    3: ["77.91.100.159", "::ffff:77.91.100.159"],
+                    4: ["77.91.100.159", "::ffff:77.91.100.159"],
+                    5: ["77.91.100.159", "::ffff:77.91.100.159"]
                 ]
             }
-            
+
+            // Per-DC bootstrap TCP port. DC2 is the home DC (20543); the rest
+            // bootstrap on 20443. The media DC (20643) arrives via help.getConfig.
+            let seedPortForDatacenter: (Int) -> UInt16 = { dcId in
+                if testingEnvironment {
+                    return 443
+                }
+                switch dcId {
+                    case 2:
+                        return 20543
+                    default:
+                        return 20443
+                }
+            }
+
             for (id, ips) in seedAddressList {
-                context.setSeedAddressSetForDatacenterWithId(id, seedAddressSet: MTDatacenterAddressSet(addressList: ips.map { MTDatacenterAddress(ip: $0, port: 443, preferForMedia: false, restrictToTcp: false, cdn: false, preferForProxy: false, secret: nil) }))
+                context.setSeedAddressSetForDatacenterWithId(id, seedAddressSet: MTDatacenterAddressSet(addressList: ips.map { MTDatacenterAddress(ip: $0, port: seedPortForDatacenter(id), preferForMedia: false, restrictToTcp: false, cdn: false, preferForProxy: false, secret: nil) }))
             }
             
             context.keychain = keychain

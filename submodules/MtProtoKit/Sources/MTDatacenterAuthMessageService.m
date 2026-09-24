@@ -59,14 +59,16 @@ static NSArray<MTDatacenterAuthPublicKey *> *defaultPublicKeys(bool isProduction
              "-----END RSA PUBLIC KEY-----"]
         ];
 
+        // Onyxgram (Testgram) server RSA public key — derived from the live
+        // auth-private.pkcs8.key; modulus fingerprint C2E8A38EF9249A63...
         productionPublicKeys = @[
             [[MTDatacenterAuthPublicKey alloc] initWithPublicKey:@"-----BEGIN RSA PUBLIC KEY-----\n"
-             "MIIBCgKCAQEA6LszBcC1LGzyr992NzE0ieY+BSaOW622Aa9Bd4ZHLl+TuFQ4lo4g\n"
-             "5nKaMBwK/BIb9xUfg0Q29/2mgIR6Zr9krM7HjuIcCzFvDtr+L0GQjae9H0pRB2OO\n"
-             "62cECs5HKhT5DZ98K33vmWiLowc621dQuwKWSQKjWf50XYFw42h21P2KXUGyp2y/\n"
-             "+aEyZ+uVgLLQbRA1dEjSDZ2iGRy12Mk5gpYc397aYp438fsJoHIgJ2lgMv5h7WY9\n"
-             "t6N/byY9Nw9p21Og3AoXSL2q/2IJ1WRUhebgAdGVMlV1fkuOQoEzR7EdpqtQD9Cs\n"
-             "5+bfo3Nhmcyvk5ftB0WkJ9z6bNZ7yxrP8wIDAQAB\n"
+             "MIIBCgKCAQEAwuijjvkkmmPTUirrZ4/NgzxoMybeldt+qtUsHmEPLCdK7Qg2VagN\n"
+             "bctDMCUJedfI7hR2lQHn13uJXUCEOhcIw6iIQCwX8Og+4BmMZXXaEl7TbdI2Zp6s\n"
+             "YIag37PIO8R67xD7t4P49ZsLYsdJl6xoQmHj6AiFKp38yNSHkQnsLxA5kGigzWsc\n"
+             "EBV4jJGxyZ1RjQ2M0klmHkZu9x4U8/1tB5yl9ys3TE640k2JKu5bzU2pvRsm1+q/\n"
+             "SZEyYeZwh21K0kZzXKKfGa1D7FpXASeU9CHQLd1mR3iwOJpS9/RTJQqX4blOa+Nd\n"
+             "sS74d+R1srE9vgl87NhQ1Hrwd5HeepVBBwIDAQAB\n"
              "-----END RSA PUBLIC KEY-----"]
         ];
     });
