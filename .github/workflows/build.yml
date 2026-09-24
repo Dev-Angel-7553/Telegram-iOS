@@ -68,10 +68,20 @@ jobs:
           echo "APP_VERSION=$(echo $APP_VERSION)" >> $GITHUB_ENV
 
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+
+          # the fake profiles ship tied to ph.telegra.Telegraph; rewrite + re-sign
+          # them for our bundle id so codesigning matches (see RewriteFakeProfiles.py)
+          NEW_BUNDLE_ID=$(cat build-system/appstore-configuration.json | python3 -c 'import json,sys;print(json.load(sys.stdin)["bundle_id"])')
+          python3 build-system/Make/RewriteFakeProfiles.py \
+            --profilesPath=build-system/fake-codesigning/profiles \
+            --certsPath=build-system/fake-codesigning/certs \
+            --oldBundleId=ph.telegra.Telegraph \
+            --newBundleId="$NEW_BUNDLE_ID"
+
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
-            build \
             --cacheDir="$HOME/bazel-disk-cache" \
+            build \
             --configurationPath="build-system/appstore-configuration.json" \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=release_arm64 \
