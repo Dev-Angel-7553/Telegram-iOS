@@ -530,10 +530,7 @@ siri_fragment = "" if not telegram_enable_siri else """
 <true/>
 """
 
-aps_fragment = "" if telegram_aps_environment == "" else """
-<key>aps-environment</key>
-<string>{telegram_aps_environment}</string>
-""".format(telegram_aps_environment=telegram_aps_environment)
+aps_fragment = ""
 
 app_groups_fragment = """
     <key>com.apple.security.application-groups</key>
