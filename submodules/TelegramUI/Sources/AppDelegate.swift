@@ -641,9 +641,21 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             isICloudEnabled: buildConfig.isICloudEnabled
         )
         
-        guard let appGroupUrl = maybeAppGroupUrl else {
-            self.mainWindow?.presentNative(UIAlertController(title: nil, message: "Error 2", preferredStyle: .alert))
-            return true
+        let appGroupUrl: URL
+        if let maybeAppGroupUrl = maybeAppGroupUrl {
+            appGroupUrl = maybeAppGroupUrl
+        } else {
+            // Sideload fallback: when the app is re-signed without the App Group
+            // entitlement (e.g. a free Apple ID via SideStore/AltStore/Sideloadly),
+            // `containerURL(forSecurityApplicationGroupIdentifier:)` returns nil.
+            // Instead of bailing out (which left the app on a black screen because
+            // mainWindow isn't created yet), fall back to the app's own sandbox
+            // container so the app still launches. Extensions won't share data in
+            // this mode, but the main app is fully functional.
+            let fallbackBase = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            let fallbackUrl = fallbackBase.appendingPathComponent("AppGroupFallback", isDirectory: true)
+            try? FileManager.default.createDirectory(at: fallbackUrl, withIntermediateDirectories: true, attributes: nil)
+            appGroupUrl = fallbackUrl
         }
         
         var isDebugConfiguration = false
