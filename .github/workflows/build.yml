@@ -68,18 +68,22 @@ jobs:
             --configuration=release_arm64 \
             --buildNumber="$BUILD_NUMBER"
 
-          # collect ipa
+          # collect ipa — bazel-bin is the stable convenience symlink to the build output
           OUTPUT_PATH="build/artifacts"
           rm -rf "$OUTPUT_PATH"
           mkdir -p "$OUTPUT_PATH"
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do
-            cp "$f" "$OUTPUT_PATH/Onyxgram.ipa"
-          done
+          IPA_SRC="bazel-bin/Telegram/Telegram.ipa"
+          if [ ! -f "$IPA_SRC" ]; then
+            IPA_SRC="$(find -L bazel-out -type f -name 'Telegram.ipa' -path '*/bin/Telegram/*' | head -n1)"
+          fi
+          echo "Using IPA at: $IPA_SRC"
+          [ -f "$IPA_SRC" ] || { echo "Telegram.ipa not found"; exit 1; }
+          cp "$IPA_SRC" "$OUTPUT_PATH/Onyxgram.ipa"
 
           # collect dsym
           mkdir -p build/DSYMs
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM; do
-            cp -R "$f" build/DSYMs/
+          for f in bazel-bin/Telegram/*.dSYM; do
+            [ -e "$f" ] && cp -R "$f" build/DSYMs/
           done
           zip -r "./$OUTPUT_PATH/Onyxgram.DSYMs.zip" build/DSYMs 1>/dev/null
 
