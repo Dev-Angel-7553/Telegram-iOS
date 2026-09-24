@@ -67,16 +67,21 @@ jobs:
           echo "BUILD_NUMBER=$(echo $BUILD_NUMBER)" >> $GITHUB_ENV
           echo "APP_VERSION=$(echo $APP_VERSION)" >> $GITHUB_ENV
 
-          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
-
           # the fake profiles ship tied to ph.telegra.Telegraph; rewrite + re-sign
-          # them for our bundle id so codesigning matches (see RewriteFakeProfiles.py)
+          # them for our bundle id so codesigning matches (see RewriteFakeProfiles.py).
+          # NOTE: run this BEFORE ImportCertificates. RewriteFakeProfiles spins up its
+          # own temporary keychain and tearing it down perturbs the user keychain
+          # search list; ImportCertificates must run last so temp.keychain (holding the
+          # signing identity) is the final, authoritative entry when the build's
+          # codesign step calls `security find-identity`.
           NEW_BUNDLE_ID=$(cat build-system/appstore-configuration.json | python3 -c 'import json,sys;print(json.load(sys.stdin)["bundle_id"])')
           python3 build-system/Make/RewriteFakeProfiles.py \
             --profilesPath=build-system/fake-codesigning/profiles \
             --certsPath=build-system/fake-codesigning/certs \
             --oldBundleId=ph.telegra.Telegraph \
             --newBundleId="$NEW_BUNDLE_ID"
+
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
 
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
