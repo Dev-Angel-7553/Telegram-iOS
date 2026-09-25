@@ -670,9 +670,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         if isDebugConfiguration || buildConfig.isInternalBuild {
             LoggingSettings.defaultSettings = LoggingSettings(logToFile: true, logToConsole: false, redactSensitiveData: true)
         } else {
-            // Onyxgram: log everything to file by default even on release builds so the in-app
-            // "Logs" settings screen (clear / send-as-archive) always has data to work with.
-            LoggingSettings.defaultSettings = LoggingSettings(logToFile: true, logToConsole: false, redactSensitiveData: true)
+            // Release builds default file logging OFF (upstream behaviour). The in-app "Logs"
+            // settings screen still lets a user turn "Log to File" on when they need to capture
+            // logs; this only sets the fresh-install default and does not override a user choice.
+            LoggingSettings.defaultSettings = LoggingSettings(logToFile: false, logToConsole: false, redactSensitiveData: true)
         }
         
         let isUITest = CommandLine.arguments.contains("--ui-test")
