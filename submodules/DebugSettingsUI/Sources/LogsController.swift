@@ -29,14 +29,16 @@ private final class LogsControllerArguments {
     let presentController: (ViewController, ViewControllerPresentationArguments?) -> Void
     let pushController: (ViewController) -> Void
     let sendLogs: () -> Void
+    let saveLogs: () -> Void
     let clearLogs: () -> Void
 
-    init(sharedContext: SharedAccountContext, context: AccountContext?, presentController: @escaping (ViewController, ViewControllerPresentationArguments?) -> Void, pushController: @escaping (ViewController) -> Void, sendLogs: @escaping () -> Void, clearLogs: @escaping () -> Void) {
+    init(sharedContext: SharedAccountContext, context: AccountContext?, presentController: @escaping (ViewController, ViewControllerPresentationArguments?) -> Void, pushController: @escaping (ViewController) -> Void, sendLogs: @escaping () -> Void, saveLogs: @escaping () -> Void, clearLogs: @escaping () -> Void) {
         self.sharedContext = sharedContext
         self.context = context
         self.presentController = presentController
         self.pushController = pushController
         self.sendLogs = sendLogs
+        self.saveLogs = saveLogs
         self.clearLogs = clearLogs
     }
 }
@@ -53,6 +55,7 @@ private enum LogsEntry: ItemListNodeEntry {
     case redactSensitiveData(String, Bool)
     case settingsInfo(String)
     case sendLogs(String)
+    case saveLogs(String)
     case clearLogs(String)
     case actionsInfo(String)
 
@@ -60,7 +63,7 @@ private enum LogsEntry: ItemListNodeEntry {
         switch self {
         case .settingsHeader, .logToFile, .logToConsole, .redactSensitiveData, .settingsInfo:
             return LogsSection.settings.rawValue
-        case .sendLogs, .clearLogs, .actionsInfo:
+        case .sendLogs, .saveLogs, .clearLogs, .actionsInfo:
             return LogsSection.actions.rawValue
         }
     }
@@ -79,10 +82,12 @@ private enum LogsEntry: ItemListNodeEntry {
             return 4
         case .sendLogs:
             return 5
-        case .clearLogs:
+        case .saveLogs:
             return 6
-        case .actionsInfo:
+        case .clearLogs:
             return 7
+        case .actionsInfo:
+            return 8
         }
     }
 
@@ -119,6 +124,10 @@ private enum LogsEntry: ItemListNodeEntry {
             return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
                 arguments.sendLogs()
             })
+        case let .saveLogs(title):
+            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                arguments.saveLogs()
+            })
         case let .clearLogs(title):
             return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: .destructive, alignment: .natural, sectionId: self.section, style: .blocks, action: {
                 arguments.clearLogs()
@@ -139,8 +148,9 @@ private func logsControllerEntries(loggingSettings: LoggingSettings) -> [LogsEnt
     entries.append(.settingsInfo("Logs are written to disk while \"Log to File\" is on. They are stored only on this device until you send them."))
 
     entries.append(.sendLogs("Send Logs"))
+    entries.append(.saveLogs("Save Logs to Files"))
     entries.append(.clearLogs("Clear Logs"))
-    entries.append(.actionsInfo("\"Send Logs\" packs all collected logs into a .zip archive and lets you forward it to a chat. \"Clear Logs\" deletes them from this device."))
+    entries.append(.actionsInfo("\"Send Logs\" packs all collected logs into a .zip archive and lets you forward it to a chat. \"Save Logs to Files\" downloads that same archive onto this device (Save to Files, AirDrop, …). \"Clear Logs\" deletes them from this device."))
 
     return entries
 }
@@ -160,7 +170,11 @@ private func clearAllLogs(basePath: String) {
     }
 }
 
-private func sendAllLogsAsArchive(context: AccountContext, pushController: @escaping (ViewController) -> Void) {
+// Builds a single .zip archive of all collected logs on disk and hands the caller a temp file
+// (named "Logs-iOS.zip") on the main queue. Shared by both "Send Logs" (forward to a chat) and
+// "Save Logs to Files" (export to the phone via the native share sheet). The caller owns the
+// returned temp file: read its bytes / present it, then dispose it via EngineTempBox.
+private func buildLogsArchive(context: AccountContext, completion: @escaping (EngineTempBox.File?) -> Void) {
     var logByType: [Signal<(type: String, logs: [(String, String)]), NoError>] = []
     for type in logsAllTypes {
         let logsPath = context.sharedContext.basePath + "/logs/\(type)"
@@ -172,44 +186,55 @@ private func sendAllLogsAsArchive(context: AccountContext, pushController: @esca
 
     let _ = (combineLatest(logByType)
     |> deliverOnMainQueue).start(next: { allLogs in
-        let controller = context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: context, filter: [.onlyWriteable, .excludeDisabled]))
-        controller.peerSelected = { [weak controller] peer, _ in
-            let peerId = peer.id
-            guard let strongController = controller else {
-                return
+        let lineFeed = "\n".data(using: .utf8)!
+        var tempSources: [EngineTempBox.File] = []
+        for (type, logItems) in allLogs {
+            if logItems.isEmpty {
+                continue
             }
-            strongController.dismiss()
-
-            let lineFeed = "\n".data(using: .utf8)!
-            var tempSources: [EngineTempBox.File] = []
-            for (type, logItems) in allLogs {
-                if logItems.isEmpty {
-                    continue
+            let tempSource = EngineTempBox.shared.tempFile(fileName: "Log-\(type).txt")
+            var rawLogData: Data = Data()
+            for (name, path) in logItems {
+                if !rawLogData.isEmpty {
+                    rawLogData.append(lineFeed)
+                    rawLogData.append(lineFeed)
                 }
-                let tempSource = EngineTempBox.shared.tempFile(fileName: "Log-\(type).txt")
-                var rawLogData: Data = Data()
-                for (name, path) in logItems {
-                    if !rawLogData.isEmpty {
-                        rawLogData.append(lineFeed)
-                        rawLogData.append(lineFeed)
-                    }
-                    rawLogData.append("------ File: \(name) ------\n".data(using: .utf8)!)
-                    if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
-                        rawLogData.append(data)
-                    }
+                rawLogData.append("------ File: \(name) ------\n".data(using: .utf8)!)
+                if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+                    rawLogData.append(data)
                 }
-                let _ = try? rawLogData.write(to: URL(fileURLWithPath: tempSource.path))
-                tempSources.append(tempSource)
             }
+            let _ = try? rawLogData.write(to: URL(fileURLWithPath: tempSource.path))
+            tempSources.append(tempSource)
+        }
 
-            let tempZip = EngineTempBox.shared.tempFile(fileName: "destination.zip")
-            SSZipArchive.createZipFile(atPath: tempZip.path, withFilesAtPaths: tempSources.map(\.path))
+        if tempSources.isEmpty {
+            completion(nil)
+            return
+        }
 
-            guard let gzippedData = try? Data(contentsOf: URL(fileURLWithPath: tempZip.path)) else {
+        let tempZip = EngineTempBox.shared.tempFile(fileName: "Logs-iOS.zip")
+        SSZipArchive.createZipFile(atPath: tempZip.path, withFilesAtPaths: tempSources.map(\.path))
+        for tempSource in tempSources {
+            EngineTempBox.shared.dispose(tempSource)
+        }
+
+        completion(tempZip)
+    })
+}
+
+private func sendAllLogsAsArchive(context: AccountContext, pushController: @escaping (ViewController) -> Void) {
+    let controller = context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: context, filter: [.onlyWriteable, .excludeDisabled]))
+    controller.peerSelected = { [weak controller] peer, _ in
+        let peerId = peer.id
+        guard let strongController = controller else {
+            return
+        }
+        strongController.dismiss()
+
+        buildLogsArchive(context: context, completion: { tempZip in
+            guard let tempZip, let gzippedData = try? Data(contentsOf: URL(fileURLWithPath: tempZip.path)) else {
                 return
-            }
-            for tempSource in tempSources {
-                EngineTempBox.shared.dispose(tempSource)
             }
             EngineTempBox.shared.dispose(tempZip)
 
@@ -221,8 +246,32 @@ private func sendAllLogsAsArchive(context: AccountContext, pushController: @esca
             let message: EnqueueMessage = .message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: file), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])
 
             let _ = enqueueMessages(account: context.account, peerId: peerId, messages: [message]).start()
+        })
+    }
+    pushController(controller)
+}
+
+// Exports the logs archive to the phone using the native iOS share sheet. This surfaces
+// "Save to Files" (and AirDrop / third-party apps) so the user can download the .zip onto the
+// device without sending it to a chat.
+private func saveAllLogsToFiles(context: AccountContext, sourceView: UIView?, present: @escaping (ViewController, ViewControllerPresentationArguments?) -> Void) {
+    buildLogsArchive(context: context, completion: { tempZip in
+        guard let tempZip else {
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            present(textAlertController(sharedContext: context.sharedContext, title: nil, text: "There are no logs to save yet.", actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), nil)
+            return
         }
-        pushController(controller)
+
+        let fileUrl = URL(fileURLWithPath: tempZip.path)
+        let activityController = UIActivityViewController(activityItems: [fileUrl], applicationActivities: nil)
+        activityController.completionWithItemsHandler = { _, _, _, _ in
+            EngineTempBox.shared.dispose(tempZip)
+        }
+        if let sourceView, let window = sourceView.window {
+            activityController.popoverPresentationController?.sourceView = window
+            activityController.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
+        }
+        context.sharedContext.applicationBindings.presentNativeController(activityController)
     })
 }
 
@@ -230,6 +279,7 @@ public func logsController(context: AccountContext, sharedContext: SharedAccount
     var presentControllerImpl: ((ViewController, ViewControllerPresentationArguments?) -> Void)?
     var pushControllerImpl: ((ViewController) -> Void)?
     var dismissImpl: (() -> Void)?
+    var getSourceViewImpl: (() -> UIView?)?
 
     let arguments = LogsControllerArguments(sharedContext: sharedContext, context: context, presentController: { controller, arguments in
         presentControllerImpl?(controller, arguments)
@@ -238,6 +288,10 @@ public func logsController(context: AccountContext, sharedContext: SharedAccount
     }, sendLogs: {
         sendAllLogsAsArchive(context: context, pushController: { controller in
             pushControllerImpl?(controller)
+        })
+    }, saveLogs: {
+        saveAllLogsToFiles(context: context, sourceView: getSourceViewImpl?(), present: { controller, arguments in
+            presentControllerImpl?(controller, arguments)
         })
     }, clearLogs: {
         let presentationData = sharedContext.currentPresentationData.with { $0 }
@@ -282,6 +336,9 @@ public func logsController(context: AccountContext, sharedContext: SharedAccount
     }
     dismissImpl = { [weak controller] in
         controller?.dismiss()
+    }
+    getSourceViewImpl = { [weak controller] in
+        return controller?.view
     }
     return controller
 }
