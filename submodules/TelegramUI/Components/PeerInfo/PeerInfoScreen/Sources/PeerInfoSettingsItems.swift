@@ -325,6 +325,9 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
     items[.support]!.append(PeerInfoScreenDisclosureItem(id: 2, text: presentationData.strings.Settings_Tips, icon: PresentationResourcesSettings.tips, action: {
         interaction.openSettings(.tips)
     }))
+    items[.support]!.append(PeerInfoScreenDisclosureItem(id: 3, text: "Logs", icon: PresentationResourcesSettings.filesGreen, action: {
+        interaction.openSettings(.logs)
+    }))
     
     var result: [(AnyHashable, [PeerInfoScreenItem])] = []
     for section in SettingsSection.allCases {

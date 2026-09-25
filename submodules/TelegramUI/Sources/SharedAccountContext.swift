@@ -1955,6 +1955,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         let controller = debugController(sharedContext: self, context: context)
         return controller
     }
+
+    public func makeLogsController(context: AccountContext) -> ViewController {
+        return logsController(context: context, sharedContext: self)
+    }
     
     public func openCreateGroupCallUI(context: AccountContext, peerIds: [EnginePeer.Id], parentController: ViewController) {
         let _ = (context.engine.data.get(
